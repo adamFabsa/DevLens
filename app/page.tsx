@@ -4,31 +4,75 @@ import { useState } from 'react';
 import { Send, Mic, MicOff, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { AppState, CostEntry, Mode } from './types';
-import { MOCK_MESSAGES, MOCK_CHECKLIST_ITEMS } from './data/mock';
+
+// Demo repository constant
+const DEMO_REPO = 'excalidraw';
 
 export default function Home() {
   const [state, setState] = useState<AppState>({
-    messages: MOCK_MESSAGES,
+    messages: [],
     sessionStats: {
-      totalCost: 0.21,
-      singleModelEquivalent: 2.10,
-      percentSaved: 90,
-      lastCacheSavings: 0.04
+      totalCost: 0,
+      singleModelEquivalent: 0,
+      percentSaved: 0,
+      lastCacheSavings: 0
     },
     checklistExpanded: false,
-    checklistItems: MOCK_CHECKLIST_ITEMS,
+    checklistItems: [],
     microphoneActive: false,
     inputValue: ''
   });
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleInputChange = (value: string) => {
     setState(prev => ({ ...prev, inputValue: value }));
   };
 
-  const handleSend = () => {
-    if (!state.inputValue.trim()) return;
-    console.log('Send:', state.inputValue);
+  const handleSend = async () => {
+    if (!state.inputValue.trim() || isLoading) return;
+    
+    const question = state.inputValue.trim();
+    setError(null);
     setState(prev => ({ ...prev, inputValue: '' }));
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          repoName: DEMO_REPO
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get answer');
+      }
+      
+      const result = await response.json();
+      
+      // Append to messages
+      setState(prev => ({
+        ...prev,
+        messages: [...prev.messages, {
+          id: result.id,
+          question: result.question,
+          answer: result.answer,
+          mode: result.mode,
+          cost: result.cost,
+          cached: result.cached,
+          timestamp: new Date(result.timestamp)
+        }]
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleMicToggle = () => {
@@ -38,6 +82,54 @@ export default function Home() {
   const handleChecklistToggle = () => {
     setState(prev => ({ ...prev, checklistExpanded: !prev.checklistExpanded }));
   };
+  
+  const handleEndSession = async () => {
+    if (state.messages.length === 0) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Extract questions and modes
+      const questionsAsked = state.messages.map(m => m.question);
+      const modeCount = state.messages.reduce((acc, m) => {
+        acc[m.mode] = (acc[m.mode] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const topModes = Object.entries(modeCount)
+        .sort((a, b) => b[1] - a[1])
+        .map(([mode]) => mode as 'Ask' | 'Code' | 'Plan')
+        .slice(0, 3);
+      
+      const response = await fetch('/api/checklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoName: DEMO_REPO,
+          questionsAsked,
+          topModes
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate checklist');
+      }
+      
+      const result = await response.json();
+      
+      setState(prev => ({
+        ...prev,
+        checklistItems: result.items,
+        checklistExpanded: true  // Auto-expand on generation
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate checklist');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -46,6 +138,17 @@ export default function Home() {
     }
   };
 
+  // Dynamic cost calculations
+  const totalCost = state.messages.reduce((sum, msg) => sum + msg.cost, 0);
+  const singleModelEquivalent = state.messages.length * 0.30;
+  const percentSaved = singleModelEquivalent > 0
+    ? Math.round(((singleModelEquivalent - totalCost) / singleModelEquivalent) * 100)
+    : 0;
+  const lastCacheSavings = state.messages.length > 0 &&
+                           state.messages[state.messages.length - 1].cached
+    ? 0.30
+    : 0;
+  
   // Derive cost entries from messages
   const costEntries: CostEntry[] = state.messages.map((msg, idx) => ({
     questionNumber: idx + 1,
@@ -133,6 +236,34 @@ export default function Home() {
                 </div>
               </div>
             ))}
+            
+            {/* Loading State */}
+            {isLoading && (
+              <div className="bg-[var(--gray-90)] border border-[var(--gray-70)] rounded-sm p-4">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin h-5 w-5 border-2 border-[var(--blue-60)] border-t-transparent rounded-full" />
+                  <span className="text-sm text-[var(--gray-60)]">Thinking...</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Error State */}
+            {error && (
+              <div className="bg-[var(--red-90)] border border-[var(--red-60)] rounded-sm p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-[var(--red-40)] font-semibold text-sm">Error</span>
+                  <div className="flex-1">
+                    <span className="text-sm text-[var(--gray-10)]">{error}</span>
+                    <button
+                      onClick={() => setError(null)}
+                      className="mt-2 text-xs text-[var(--red-40)] hover:underline block"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Input Bar */}
@@ -159,7 +290,7 @@ export default function Home() {
               </button>
               <button
                 onClick={handleSend}
-                disabled={!state.inputValue.trim()}
+                disabled={!state.inputValue.trim() || isLoading}
                 className="w-12 h-12 flex items-center justify-center bg-[var(--blue-60)] hover:bg-[var(--blue-70)] disabled:bg-[var(--gray-80)] disabled:cursor-not-allowed rounded-sm transition-colors"
                 aria-label="Send message"
               >
@@ -175,15 +306,15 @@ export default function Home() {
           <div className="px-6 py-6 border-b border-[var(--gray-70)] space-y-3">
             <div>
               <div className="text-3xl font-semibold font-mono text-white">
-                {state.sessionStats.totalCost.toFixed(2)} Bc
+                {totalCost.toFixed(2)} Bc
               </div>
               <div className="text-xs text-[var(--gray-60)] mt-1">Session cost</div>
             </div>
             <div className="text-sm text-[var(--gray-60)]">
-              Single-model equivalent: <span className="font-mono">{state.sessionStats.singleModelEquivalent.toFixed(2)} Bc</span>
+              Single-model equivalent: <span className="font-mono">{singleModelEquivalent.toFixed(2)} Bc</span>
             </div>
             <div className="text-2xl font-semibold text-[var(--green-40)]">
-              Saved: {state.sessionStats.percentSaved}%
+              Saved: {percentSaved}%
             </div>
           </div>
 
@@ -225,7 +356,7 @@ export default function Home() {
 
           {/* Last Cache Savings */}
           <div className="px-6 py-3 border-t border-[var(--gray-70)] text-xs text-[var(--gray-60)]">
-            Last cache hit saved <span className="font-mono text-[var(--green-40)]">{state.sessionStats.lastCacheSavings.toFixed(2)} Bc</span>
+            Last cache hit saved <span className="font-mono text-[var(--green-40)]">{lastCacheSavings.toFixed(2)} Bc</span>
           </div>
         </div>
       </div>
@@ -233,15 +364,23 @@ export default function Home() {
       {/* Checklist Drawer - Bottom */}
       <div className="border-t border-[var(--gray-70)] bg-[var(--gray-90)] transition-all duration-300 ease-in-out">
         {/* Drawer Header */}
-        <button
-          onClick={handleChecklistToggle}
-          className="w-full px-6 py-3 flex items-center justify-between hover:bg-[var(--gray-80)] transition-colors"
-        >
+        <div className="w-full px-6 py-3 flex items-center justify-between hover:bg-[var(--gray-80)] transition-colors">
           <span className="text-sm font-medium">
             Onboarding checklist (generated at session end)
           </span>
-          {state.checklistExpanded ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
-        </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleEndSession}
+              disabled={state.messages.length === 0 || state.checklistItems.length > 0 || isLoading}
+              className="px-3 py-1 text-xs bg-[var(--blue-60)] hover:bg-[var(--blue-70)] disabled:bg-[var(--gray-80)] disabled:cursor-not-allowed rounded-sm transition-colors"
+            >
+              End Session
+            </button>
+            <button onClick={handleChecklistToggle}>
+              {state.checklistExpanded ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
+            </button>
+          </div>
+        </div>
 
         {/* Drawer Content */}
         {state.checklistExpanded && (
