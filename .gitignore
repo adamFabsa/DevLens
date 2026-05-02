@@ -48,3 +48,5 @@ demo-repo/*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+verify-env.js
