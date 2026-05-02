@@ -40,18 +40,13 @@ Uses ESLint v9 flat config format in [`eslint.config.mjs`](eslint.config.mjs) wi
 ### Custom Font Variables
 Geist Sans and Geist Mono fonts are loaded with CSS variables `--font-geist-sans` and `--font-geist-mono`, referenced in Tailwind theme as `--font-sans` and `--font-mono`.
 
-## Cost-Aware Routing (Planned)
+## Cost-Aware Routing
 
-A future rule file at [`.bob/rules/cost-aware-answering.md`](.bob/rules/cost-aware-answering.md) will classify question complexity and route between Ask mode (simple queries) and Code mode (complex analysis) for cost efficiency during hackathon demos.
+See [`.bob/rules/cost-aware-answering.md`](.bob/rules/cost-aware-answering.md) for the full mode-routing rules and answer format.
 
 ## Bob Session Export Discipline
 
 Every meaningful Bob task in this project must be exported to `/bob_sessions/` immediately after completion. Naming convention: `NN-short-description.png` for the consumption summary screenshot and `NN-short-description.md` for the exported task history. Sequence numbers (NN) are zero-padded and global across the team. This export is a hackathon judging deliverable.
-
-Until that rule file exists, agents should default to:
-- **Ask mode** for: "what does X do," "where is Y," "explain Z" — simple lookups
-- **Code mode** for: "how do X and Y connect," structural analysis, code generation, test writing
-- Begin every answer with `[Mode: Ask|Code] [Reason: one sentence]` so cost tracking can attribute usage.
 
 ## Commands
 
