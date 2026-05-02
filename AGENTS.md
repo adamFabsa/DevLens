@@ -48,6 +48,19 @@ See [`.bob/rules/cost-aware-answering.md`](.bob/rules/cost-aware-answering.md) f
 
 Every meaningful Bob task in this project must be exported to `/bob_sessions/` immediately after completion. Naming convention: `NN-short-description.png` for the consumption summary screenshot and `NN-short-description.md` for the exported task history. Sequence numbers (NN) are zero-padded and global across the team. This export is a hackathon judging deliverable.
 
+## Demo Codebase
+
+DevLens analyzes Excalidraw (the open-source whiteboard tool at https://github.com/excalidraw/excalidraw) during demos. Excalidraw is MIT-licensed, ~55MB, ~1300 files. Clone with:
+
+```bash
+cd demo-repo
+rm .gitkeep 2>/dev/null
+git clone --depth 1 https://github.com/excalidraw/excalidraw.git .
+rm -rf .git
+```
+
+The clone is gitignored to avoid committing 55MB of unrelated source.
+
 ## Commands
 
 ```bash
