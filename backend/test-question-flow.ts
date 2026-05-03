@@ -9,6 +9,7 @@
  */
 
 import { initCache, deleteCacheEntry } from './cache';
+import { extractIntent } from './nlu';
 import { handleQuestion } from './questionFlow';
 
 async function testQuestionFlow() {
@@ -20,10 +21,22 @@ async function testQuestionFlow() {
     
     const testInput = {
       question: 'What does the auth module do?',
-      repoName: 'excalidraw'
+      repoName: 'conduit'
     };
     
-    // Step 2: First call (cache miss)
+    // Step 2: Pre-clear any cached entry for this question
+    console.log('🧹 Clearing any existing cache entry...');
+    const intent = await extractIntent(testInput.question);
+    const cacheKey = `${testInput.repoName}:${intent}`;
+    try {
+      await deleteCacheEntry(cacheKey);
+      console.log(`✓ Cleared cache key: ${cacheKey}\n`);
+    } catch (err) {
+      // Entry doesn't exist, that's fine
+      console.log(`✓ No existing cache entry to clear\n`);
+    }
+    
+    // Step 3: First call (cache miss)
     console.log('📤 First call (expecting cache miss)...');
     const result1 = await handleQuestion(testInput);
     
@@ -82,7 +95,6 @@ async function testQuestionFlow() {
     }
     
     // Step 4: Cleanup
-    const cacheKey = `${testInput.repoName}:${result1.intent}`;
     await deleteCacheEntry(cacheKey);
     console.log('\n🧹 Test entry cleaned up');
     

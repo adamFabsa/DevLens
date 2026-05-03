@@ -14,7 +14,7 @@ import ReactMarkdown from "react-markdown";
 import { AppState, CostEntry, Mode } from "./types";
 
 // Demo repository constant
-const DEMO_REPO = "excalidraw";
+const DEMO_REPO = "conduit";
 
 export default function Home() {
   const [state, setState] = useState<AppState>({
@@ -300,7 +300,7 @@ export default function Home() {
           <div className="px-6 py-4 border-b border-[var(--gray-70)]">
             <h1 className="text-2xl font-semibold">DevLens</h1>
             <p className="text-sm text-[var(--gray-60)] mt-1">
-              Analyzing: excalidraw
+              Analyzing: conduit
             </p>
           </div>
 
@@ -420,7 +420,7 @@ export default function Home() {
                 value={state.inputValue}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask about excalidraw..."
+                placeholder="Ask about conduit..."
                 className="flex-1 bg-[var(--gray-90)] border border-[var(--gray-70)] rounded-sm px-4 py-3 text-sm focus:outline-none focus:border-[var(--blue-60)] transition-colors"
               />
               <button
