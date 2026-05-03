@@ -27,6 +27,7 @@ The cost panel shows it live. Per-question cost. Cumulative session cost. Cache 
 
 ## Tech Stack
 <img width="1367" height="648" alt="Screenshot 2026-05-03 at 1 11 02 AM" src="https://github.com/user-attachments/assets/59d7ee91-836d-48c3-b586-c695fb0f438b" />
+
 **IBM Services**
 - IBM Bob — built the codebase across 12 task sessions
 - Cloudant — semantic Q&A cache
