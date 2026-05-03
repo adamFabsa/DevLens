@@ -2,9 +2,6 @@
 
 **DevLens gets cheaper every time someone uses it.** First developer pays. Everyone after pays nothing. IBM Bob's own session data proves every number.
 
-<img width="1367" height="648" alt="Screenshot 2026-05-03 at 1 11 02 AM" src="https://github.com/user-attachments/assets/59d7ee91-836d-48c3-b586-c695fb0f438b" />
-
-
 ![DevLens cache hit demonstration](docs/screenshots/cache-hit-hero.webp)
 
 ## Demo Video
@@ -29,7 +26,7 @@ The cost panel shows it live. Per-question cost. Cumulative session cost. Cache 
 7. At session end, watsonx Orchestrate generates an onboarding checklist
 
 ## Tech Stack
-
+<img width="1367" height="648" alt="Screenshot 2026-05-03 at 1 11 02 AM" src="https://github.com/user-attachments/assets/59d7ee91-836d-48c3-b586-c695fb0f438b" />
 **IBM Services**
 - IBM Bob — built the codebase across 12 task sessions
 - Cloudant — semantic Q&A cache
