@@ -6,8 +6,7 @@
 
 ## Demo Video
 
-[link added after recording]
-
+https://youtu.be/O1CoDpQBYxs
 ## The Problem
 
 A new developer joins a team and faces an unfamiliar codebase. They burn hours asking colleagues "what does this module do," "how do these services connect," "where's the main logic." Every question costs the team time. Repeated questions across teammates compound the cost.
