@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Send,
   Mic,
@@ -9,6 +9,8 @@ import {
   ChevronUp,
   Zap,
   Volume2,
+  Pause,
+  Loader2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AppState, CostEntry, Mode } from "./types";
@@ -34,9 +36,27 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Pipeline status indicator state
+  const [pipelineSteps, setPipelineSteps] = useState<string[]>([]);
+  const timeoutRefs = useRef<NodeJS.Timeout[]>([]);
+
+  // Cache hit flash animation state
+  const [flashingBadges, setFlashingBadges] = useState<Set<string>>(new Set());
+
+  // Animated percentage state
+  const [animatedPercent, setAnimatedPercent] = useState(0);
+  const prevPercentRef = useRef(0);
+
   // MediaRecorder state for voice input
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  
+  // Currently playing audio for TTS (to prevent overlapping voices)
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Track which answer is currently speaking and loading state
+  const [speakingAnswerId, setSpeakingAnswerId] = useState<string | null>(null);
+  const [loadingTTS, setLoadingTTS] = useState<string | null>(null);
 
   const handleInputChange = (value: string) => {
     setState((prev) => ({ ...prev, inputValue: value }));
@@ -49,6 +69,19 @@ export default function Home() {
     setError(null);
     setState((prev) => ({ ...prev, inputValue: "" }));
     setIsLoading(true);
+
+    // Clear any existing pipeline timeouts
+    timeoutRefs.current.forEach(clearTimeout);
+    timeoutRefs.current = [];
+
+    // Reset and schedule pipeline steps
+    setPipelineSteps([]);
+    timeoutRefs.current.push(
+      setTimeout(() => setPipelineSteps(['🔍 Extracting intent with Watson NLU...']), 200),
+      setTimeout(() => setPipelineSteps(prev => [...prev, '🗄️ Checking Cloudant cache...']), 600),
+      setTimeout(() => setPipelineSteps(prev => [...prev, '📂 Reading codebase files...']), 1000),
+      setTimeout(() => setPipelineSteps(prev => [...prev, '🤖 Analyzing with LLM...']), 1400)
+    );
 
     try {
       const response = await fetch("/api/ask", {
@@ -67,6 +100,46 @@ export default function Home() {
 
       const result = await response.json();
 
+      // Handle pipeline indicator based on cache status
+      if (result.cached) {
+        // Clear scheduled steps
+        timeoutRefs.current.forEach(clearTimeout);
+        timeoutRefs.current = [];
+        
+        // Clear immediately to unmount any visible step
+        setPipelineSteps([]);
+        
+        // Then after a short tick, show the cache hit message
+        setTimeout(() => {
+          setPipelineSteps(['⚡ Cache hit — answered instantly']);
+          
+          // Show for 800ms for human readability
+          setTimeout(() => {
+            setPipelineSteps([]);
+            setIsLoading(false);
+          }, 800);
+        }, 50);
+
+        // Trigger flash animation for cache hit badge
+        const answerId = result.id;
+        setFlashingBadges(prev => new Set(prev).add(answerId));
+        
+        // Remove flash after 800ms
+        setTimeout(() => {
+          setFlashingBadges(prev => {
+            const next = new Set(prev);
+            next.delete(answerId);
+            return next;
+          });
+        }, 800);
+      } else {
+        // Normal flow - clear steps and show answer
+        timeoutRefs.current.forEach(clearTimeout);
+        timeoutRefs.current = [];
+        setPipelineSteps([]);
+        setIsLoading(false);
+      }
+
       // Append to messages
       setState((prev) => ({
         ...prev,
@@ -84,8 +157,11 @@ export default function Home() {
         ],
       }));
     } catch (err) {
+      // Clear pipeline on error
+      timeoutRefs.current.forEach(clearTimeout);
+      timeoutRefs.current = [];
+      setPipelineSteps([]);
       setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -161,7 +237,27 @@ export default function Home() {
     }
   };
 
-  const handleSpeakAnswer = async (text: string) => {
+  const handleSpeakAnswer = async (answerId: string, text: string) => {
+    // If this answer is already speaking, pause it
+    if (speakingAnswerId === answerId && currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      setSpeakingAnswerId(null);
+      return;
+    }
+    
+    // Stop any currently playing audio (interrupt and replace)
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      setSpeakingAnswerId(null);
+    }
+    
+    // Show loading state
+    setLoadingTTS(answerId);
+    
     try {
       const response = await fetch("/api/tts", {
         method: "POST",
@@ -173,16 +269,26 @@ export default function Home() {
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
+        
+        // Track this as the currently playing audio
+        currentAudioRef.current = audio;
+        setLoadingTTS(null);
+        setSpeakingAnswerId(answerId);
 
-        // Clean up URL after playback
+        // Clean up URL and ref after playback
         audio.onended = () => {
+          currentAudioRef.current = null;
+          setSpeakingAnswerId(null);
           URL.revokeObjectURL(audioUrl);
         };
 
         audio.play();
+      } else {
+        setLoadingTTS(null);
       }
     } catch (err) {
       console.error("TTS error:", err);
+      setLoadingTTS(null);
       // Silent failure - no error message for TTS failures
     }
   };
@@ -269,6 +375,35 @@ export default function Home() {
       ? 0.3
       : 0;
 
+  // Animate percentage when it changes
+  useEffect(() => {
+    if (percentSaved === prevPercentRef.current) return;
+    
+    const start = prevPercentRef.current;
+    const end = percentSaved;
+    const duration = 600;
+    const startTime = performance.now();
+    
+    function animate(currentTime: number) {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // easeOut cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(start + (end - start) * eased);
+      
+      setAnimatedPercent(current);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        prevPercentRef.current = end;
+      }
+    }
+    
+    requestAnimationFrame(animate);
+  }, [percentSaved]);
+
   // Derive cost entries from messages
   const costEntries: CostEntry[] = state.messages.map((msg, idx) => ({
     questionNumber: idx + 1,
@@ -298,7 +433,14 @@ export default function Home() {
         <div className="flex flex-col border-r border-[var(--gray-70)] overflow-hidden">
           {/* Header */}
           <div className="px-6 py-4 border-b border-[var(--gray-70)]">
-            <h1 className="text-2xl font-semibold">DevLens</h1>
+            <div className="flex items-center gap-3">
+              <img
+                src="/bee.png"
+                alt="DevLens Logo"
+                className="w-8 h-8"
+              />
+              <h1 className="text-2xl font-semibold">DevLens</h1>
+            </div>
             <p className="text-sm text-[var(--gray-60)] mt-1">
               Analyzing: conduit
             </p>
@@ -306,6 +448,35 @@ export default function Home() {
 
           {/* Chat Thread - Scrollable */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {/* Empty State */}
+            {state.messages.length === 0 && !isLoading && (
+              <div className="flex-1 flex items-center justify-center h-full">
+                <div className="text-center space-y-6 max-w-2xl px-6">
+                  <h2 className="text-2xl font-semibold text-white">
+                    Ask anything about conduit
+                  </h2>
+                  <p className="text-sm text-[var(--gray-60)]">
+                    Watson NLU + Cloudant cache + codebase reading. Repeat questions cost 0.00 Bc.
+                  </p>
+                  <div className="flex items-center justify-center gap-3 flex-wrap">
+                    {[
+                      "What does the auth module do?",
+                      "How does the article service work?",
+                      "What's in the routes file?"
+                    ].map((exampleQ, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setState(prev => ({ ...prev, inputValue: exampleQ }))}
+                        className="border border-[var(--gray-70)] px-4 py-3 rounded-sm text-sm text-[var(--gray-10)] hover:border-[var(--blue-60)] hover:text-white transition-colors cursor-pointer"
+                      >
+                        {exampleQ}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {state.messages.map((answer, idx) => (
               <div key={answer.id} className="space-y-3">
                 {/* User Question Bubble */}
@@ -326,19 +497,29 @@ export default function Home() {
                         {answer.mode}
                       </span>
                       {answer.cached && (
-                        <span className="bg-[var(--green-40)] text-[var(--gray-100)] text-xs px-2 py-1 rounded-sm font-semibold flex items-center gap-1">
+                        <span className={`bg-[var(--green-40)] text-[var(--gray-100)] text-xs px-2 py-1 rounded-sm font-semibold flex items-center gap-1 transition-all ${
+                          flashingBadges.has(answer.id)
+                            ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-[var(--gray-90)]'
+                            : ''
+                        }`}>
                           <Zap size={12} />
                           Cached — 0.00 Bc
                         </span>
                       )}
                     </div>
                     <button
-                      onClick={() => handleSpeakAnswer(answer.answer)}
+                      onClick={() => handleSpeakAnswer(answer.id, answer.answer)}
                       className="text-[var(--gray-60)] hover:text-white transition-colors p-1"
-                      aria-label="Speak answer"
-                      title="Speak answer"
+                      aria-label={speakingAnswerId === answer.id ? "Pause" : loadingTTS === answer.id ? "Loading..." : "Speak answer"}
+                      title={speakingAnswerId === answer.id ? "Pause" : loadingTTS === answer.id ? "Loading..." : "Speak answer"}
                     >
-                      <Volume2 size={16} />
+                      {loadingTTS === answer.id ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : speakingAnswerId === answer.id ? (
+                        <Pause size={16} />
+                      ) : (
+                        <Volume2 size={16} />
+                      )}
                     </button>
                   </div>
 
@@ -377,15 +558,21 @@ export default function Home() {
               </div>
             ))}
 
-            {/* Loading State */}
-            {isLoading && (
-              <div className="bg-[var(--gray-90)] border border-[var(--gray-70)] rounded-sm p-4">
-                <div className="flex items-center gap-3">
-                  <div className="animate-spin h-5 w-5 border-2 border-[var(--blue-60)] border-t-transparent rounded-full" />
-                  <span className="text-sm text-[var(--gray-60)]">
-                    Thinking...
-                  </span>
-                </div>
+            {/* Pipeline Status Indicator */}
+            {isLoading && pipelineSteps.length > 0 && (
+              <div className="bg-[var(--gray-90)] border border-[var(--gray-70)] rounded-sm p-4 space-y-2">
+                {pipelineSteps.map((step, idx) => (
+                  <div
+                    key={idx}
+                    className={`text-sm flex items-center gap-2 ${
+                      idx === pipelineSteps.length - 1
+                        ? 'text-blue-400 animate-pulse'
+                        : 'text-gray-400'
+                    }`}
+                  >
+                    {step}
+                  </div>
+                ))}
               </div>
             )}
 
@@ -469,7 +656,7 @@ export default function Home() {
               </span>
             </div>
             <div className="text-2xl font-semibold text-[var(--green-40)]">
-              Saved: {percentSaved}%
+              Saved: {animatedPercent}%
             </div>
           </div>
 
